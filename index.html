@@ -54,6 +54,52 @@
         .modal {
             backdrop-filter: blur(8px);
         }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button:disabled:hover {
+            transform: none;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake {
+            animation: shake 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .modal:not(.hidden) > div {
+            animation: fadeIn 0.3s ease-out;
+        }
+        #gameCanvas {
+            max-width: 100%;
+            height: auto;
+        }
+        @media (max-width: 1024px) {
+            #gameCanvas {
+                width: 100%;
+            }
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body class="flex items-center justify-center p-4">
@@ -187,12 +233,18 @@
                 <!-- How to Play -->
                 <div class="stat-card">
                     <h2 class="text-xl font-bold mb-2 text-gray-800">How to Play</h2>
-                    <ul class="text-sm text-gray-700 space-y-1">
+                    <ul class="text-sm text-gray-700 space-y-1 mb-3">
                         <li>• Select a unit type</li>
-                        <li>• Click empty tiles to place</li>
+                        <li>• Click tiles adjacent to your territory</li>
                         <li>• Place up to 3 units per turn</li>
                         <li>• Units fight adjacent enemies</li>
                         <li>• Control 60% to win!</li>
+                    </ul>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">Keyboard Shortcuts</h3>
+                    <ul class="text-xs text-gray-600 space-y-1">
+                        <li>• 1, 2, 3: Select units</li>
+                        <li>• Enter: End turn</li>
+                        <li>• Ctrl+Z: Undo</li>
                     </ul>
                 </div>
             </div>
@@ -312,6 +364,11 @@
                     this.handleCanvasHover(e);
                 });
 
+                // Clear hover state when mouse leaves canvas
+                this.canvas.addEventListener('mouseleave', () => {
+                    this.hoveredTile = null;
+                });
+
                 // Controls
                 document.getElementById('end-turn-btn').addEventListener('click', () => {
                     this.endTurn();
@@ -322,7 +379,14 @@
                 });
 
                 document.getElementById('restart-btn').addEventListener('click', () => {
-                    this.restart();
+                    const territory = this.calculateTerritory();
+                    if (territory.player > 1 || territory.ai > 1) {
+                        if (confirm('Are you sure you want to restart the game? Current progress will be lost.')) {
+                            this.restart();
+                        }
+                    } else {
+                        this.restart();
+                    }
                 });
 
                 // Settings
@@ -348,6 +412,34 @@
                 document.getElementById('close-modal-btn').addEventListener('click', () => {
                     this.hideGameOverModal();
                 });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (this.currentPlayer !== 'player') return;
+
+                    switch(e.key) {
+                        case '1':
+                            this.selectUnit('warrior');
+                            break;
+                        case '2':
+                            this.selectUnit('archer');
+                            break;
+                        case '3':
+                            this.selectUnit('mage');
+                            break;
+                        case 'Enter':
+                            if (this.unitsPlacedThisTurn > 0) {
+                                this.endTurn();
+                            }
+                            break;
+                        case 'z':
+                            if (e.ctrlKey || e.metaKey) {
+                                e.preventDefault();
+                                this.undoLastMove();
+                            }
+                            break;
+                    }
+                });
             }
 
             selectUnit(unitType) {
@@ -363,9 +455,19 @@
             }
 
             handleCanvasClick(e) {
-                if (this.currentPlayer !== 'player') return;
-                if (!this.selectedUnit) return;
-                if (this.unitsPlacedThisTurn >= this.maxUnitsPerTurn) return;
+                if (this.currentPlayer !== 'player') {
+                    this.showNotification('Wait for your turn!', 'warning');
+                    return;
+                }
+                if (!this.selectedUnit) {
+                    this.showNotification('Select a unit first!', 'warning');
+                    this.shakeElement('.unit-icon');
+                    return;
+                }
+                if (this.unitsPlacedThisTurn >= this.maxUnitsPerTurn) {
+                    this.showNotification('Maximum units placed. End your turn!', 'warning');
+                    return;
+                }
 
                 const rect = this.canvas.getBoundingClientRect();
                 const x = Math.floor((e.clientX - rect.left) / this.tileSize);
@@ -373,6 +475,8 @@
 
                 if (this.isValidPlacement(x, y)) {
                     this.placeUnit(x, y, this.selectedUnit, 'player');
+                } else {
+                    this.showNotification('Invalid placement! Must be adjacent to your territory.', 'error');
                 }
             }
 
@@ -384,22 +488,72 @@
                 this.hoveredTile = { x, y };
             }
 
-            isValidPlacement(x, y) {
+            showNotification(message, type = 'info') {
+                // Remove existing notifications
+                const existing = document.querySelector('.notification');
+                if (existing) existing.remove();
+
+                const notification = document.createElement('div');
+                notification.className = 'notification';
+
+                const colors = {
+                    info: 'bg-blue-500',
+                    warning: 'bg-yellow-500',
+                    error: 'bg-red-500',
+                    success: 'bg-green-500'
+                };
+
+                notification.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full ${colors[type] || colors.info}"></div>
+                        <span class="text-gray-800 font-medium">${message}</span>
+                    </div>
+                `;
+
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.style.animation = 'slideIn 0.3s ease-out reverse';
+                    setTimeout(() => notification.remove(), 300);
+                }, 2500);
+            }
+
+            shakeElement(selector) {
+                const elements = document.querySelectorAll(selector);
+                elements.forEach(el => {
+                    el.classList.add('shake');
+                    setTimeout(() => el.classList.remove('shake'), 300);
+                });
+            }
+
+            isValidPlacement(x, y, owner = 'player') {
                 if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) return false;
 
                 const tile = this.grid[y][x];
 
-                // Can only place on empty tiles or own territory without units
-                return tile.owner === null || (tile.owner === 'player' && tile.unit === null);
+                // Tile must be empty or owned by player without a unit
+                if (tile.unit !== null) return false;
+                if (tile.owner !== null && tile.owner !== owner) return false;
+
+                // Must be adjacent to player's territory (or on player's territory)
+                if (tile.owner === owner) return true;
+
+                // Check if adjacent to player's territory
+                const neighbors = this.getNeighbors(x, y);
+                return neighbors.some(({ nx, ny }) => {
+                    return this.grid[ny][nx].owner === owner;
+                });
             }
 
             placeUnit(x, y, unitType, owner) {
-                // Save state for undo
-                const previousState = JSON.parse(JSON.stringify(this.grid));
-                this.moveHistory.push({
-                    grid: previousState,
-                    unitsPlaced: this.unitsPlacedThisTurn
-                });
+                // Save state for undo (only for player)
+                if (owner === 'player') {
+                    const previousState = JSON.parse(JSON.stringify(this.grid));
+                    this.moveHistory.push({
+                        grid: previousState,
+                        unitsPlaced: this.unitsPlacedThisTurn
+                    });
+                }
 
                 this.grid[y][x] = {
                     owner: owner,
@@ -408,6 +562,12 @@
 
                 this.unitsPlacedThisTurn++;
                 this.updateUI();
+
+                // Show success notification for player
+                if (owner === 'player') {
+                    const unitNames = { warrior: 'Warrior', archer: 'Archer', mage: 'Mage' };
+                    this.showNotification(`${unitNames[unitType]} placed! (${this.maxUnitsPerTurn - this.unitsPlacedThisTurn} left)`, 'success');
+                }
 
                 // Process battles immediately
                 this.processBattles(x, y);
@@ -486,9 +646,23 @@
                 });
             }
 
+            hasValidMoves(owner) {
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        if (this.isValidPlacement(x, y, owner)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             endTurn() {
                 if (this.currentPlayer !== 'player') return;
-                if (this.unitsPlacedThisTurn === 0) return;
+                if (this.unitsPlacedThisTurn === 0) {
+                    this.showNotification('Place at least one unit before ending turn!', 'warning');
+                    return;
+                }
 
                 this.currentPlayer = 'ai';
                 this.unitsPlacedThisTurn = 0;
@@ -503,6 +677,19 @@
 
             aiTurn() {
                 const moves = this.getAIMoves();
+
+                if (moves.length === 0) {
+                    // AI has no valid moves
+                    this.showNotification('AI has no valid moves!', 'info');
+                    setTimeout(() => {
+                        this.currentPlayer = 'player';
+                        this.unitsPlacedThisTurn = 0;
+                        this.updateUI();
+                        this.checkWinCondition();
+                    }, 1000);
+                    return;
+                }
+
                 let moveIndex = 0;
 
                 const placeMoves = () => {
@@ -518,6 +705,18 @@
                             this.currentPlayer = 'player';
                             this.unitsPlacedThisTurn = 0;
                             this.updateUI();
+
+                            // Check if player has any valid moves
+                            if (!this.hasValidMoves('player')) {
+                                this.showNotification('You have no valid moves! AI wins!', 'error');
+                                setTimeout(() => {
+                                    const territory = this.calculateTerritory();
+                                    const totalTiles = this.gridSize * this.gridSize;
+                                    const playerPercent = (territory.player / totalTiles) * 100;
+                                    const aiPercent = (territory.ai / totalTiles) * 100;
+                                    this.showGameOver('ai', playerPercent, aiPercent);
+                                }, 1500);
+                            }
                         }, 500);
                     }
                 };
@@ -548,46 +747,42 @@
                     }
                 }
 
-                // Find valid placement locations
+                // Find valid placement locations using the proper validation
                 const validPlacements = [];
 
-                // Can place on AI territory without units
-                aiTiles.forEach(({ x, y, tile }) => {
-                    if (!tile.unit) {
-                        const neighbors = this.getNeighbors(x, y);
-                        const hasPlayerNeighbor = neighbors.some(({ nx, ny }) =>
-                            this.grid[ny][nx].owner === 'player'
-                        );
+                // Check all tiles for valid AI placements
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        if (this.isValidPlacement(x, y, 'ai')) {
+                            const neighbors = this.getNeighbors(x, y);
+                            const hasPlayerNeighbor = neighbors.some(({ nx, ny }) =>
+                                this.grid[ny][nx].owner === 'player'
+                            );
+                            const hasPlayerUnit = neighbors.some(({ nx, ny }) =>
+                                this.grid[ny][nx].owner === 'player' && this.grid[ny][nx].unit
+                            );
 
-                        validPlacements.push({
-                            x, y,
-                            priority: hasPlayerNeighbor ? 10 : 5,
-                            type: 'defend'
-                        });
+                            let priority = 3;
+                            let type = 'expand';
+
+                            if (this.grid[y][x].owner === 'ai') {
+                                // Placing on own territory
+                                priority = hasPlayerNeighbor ? 10 : 5;
+                                type = 'defend';
+                            } else if (hasPlayerUnit) {
+                                // Attacking near player units
+                                priority = 8;
+                                type = 'attack';
+                            } else if (hasPlayerNeighbor) {
+                                // Near player territory
+                                priority = 6;
+                                type = 'attack';
+                            }
+
+                            validPlacements.push({ x, y, priority, type });
+                        }
                     }
-                });
-
-                // Can place on empty tiles adjacent to AI territory
-                emptyTiles.forEach(({ x, y }) => {
-                    const neighbors = this.getNeighbors(x, y);
-                    const hasAINeighbor = neighbors.some(({ nx, ny }) =>
-                        this.grid[ny][nx].owner === 'ai'
-                    );
-                    const hasPlayerNeighbor = neighbors.some(({ nx, ny }) =>
-                        this.grid[ny][nx].owner === 'player'
-                    );
-
-                    if (hasAINeighbor) {
-                        let priority = 3;
-                        if (hasPlayerNeighbor) priority = 8;
-
-                        validPlacements.push({
-                            x, y,
-                            priority: priority,
-                            type: hasPlayerNeighbor ? 'attack' : 'expand'
-                        });
-                    }
-                });
+                }
 
                 // Strategy-based filtering
                 let filteredPlacements = validPlacements;
@@ -732,11 +927,23 @@
 
                 if (winner === 'player') {
                     title.textContent = 'Victory!';
-                    message.textContent = `You control ${playerPercent.toFixed(1)}% of the territory!`;
+                    let reason = '';
+                    if (aiPercent === 0) {
+                        reason = 'You eliminated the AI!';
+                    } else {
+                        reason = `You control ${playerPercent.toFixed(1)}% of the territory!`;
+                    }
+                    message.textContent = reason;
                     icon.textContent = '🏆';
                 } else {
                     title.textContent = 'Defeat!';
-                    message.textContent = `AI controls ${aiPercent.toFixed(1)}% of the territory.`;
+                    let reason = '';
+                    if (playerPercent === 0) {
+                        reason = 'The AI eliminated you!';
+                    } else {
+                        reason = `AI controls ${aiPercent.toFixed(1)}% of the territory.`;
+                    }
+                    message.textContent = reason;
                     icon.textContent = '😔';
                 }
 
