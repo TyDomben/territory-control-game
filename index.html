@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Territory Control - RPS Strategy Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        canvas {
+            border: 4px solid #fff;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+        .unit-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 3px solid transparent;
+        }
+        .unit-icon:hover {
+            transform: scale(1.1);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .unit-icon.selected {
+            border-color: #fbbf24;
+            transform: scale(1.15);
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .pulse {
+            animation: pulse 0.5s ease-in-out;
+        }
+        .modal {
+            backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="container mx-auto max-w-7xl">
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <h1 class="text-5xl font-bold text-white mb-2 drop-shadow-lg">Territory Control</h1>
+            <p class="text-xl text-white opacity-90">Rock-Paper-Scissors Strategy Game</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Left Panel - Unit Selection & Info -->
+            <div class="lg:col-span-1 space-y-4">
+                <!-- Unit Selection -->
+                <div class="stat-card">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Select Unit</h2>
+                    <div class="space-y-3">
+                        <div id="warrior-btn" class="unit-icon bg-red-500 text-white" data-unit="warrior">
+                            <span>⚔️</span>
+                        </div>
+                        <div class="text-sm text-gray-700 ml-2">
+                            <strong>Warrior</strong><br>
+                            Beats: Archers 🏹<br>
+                            Loses to: Mages 🔮
+                        </div>
+
+                        <div id="archer-btn" class="unit-icon bg-green-500 text-white" data-unit="archer">
+                            <span>🏹</span>
+                        </div>
+                        <div class="text-sm text-gray-700 ml-2">
+                            <strong>Archer</strong><br>
+                            Beats: Mages 🔮<br>
+                            Loses to: Warriors ⚔️
+                        </div>
+
+                        <div id="mage-btn" class="unit-icon bg-blue-500 text-white" data-unit="mage">
+                            <span>🔮</span>
+                        </div>
+                        <div class="text-sm text-gray-700 ml-2">
+                            <strong>Mage</strong><br>
+                            Beats: Warriors ⚔️<br>
+                            Loses to: Archers 🏹
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Stats -->
+                <div class="stat-card">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Game Stats</h2>
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-700">Turn:</span>
+                            <span id="turn-display" class="font-bold text-lg">Player</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-700">Units Left:</span>
+                            <span id="units-left" class="font-bold text-lg text-blue-600">3</span>
+                        </div>
+                        <div class="mt-4">
+                            <div class="text-sm text-gray-700 mb-2">Player Territory</div>
+                            <div class="bg-gray-200 rounded-full h-4 overflow-hidden">
+                                <div id="player-territory" class="bg-blue-500 h-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                            <div id="player-percent" class="text-right text-sm text-gray-600 mt-1">0%</div>
+                        </div>
+                        <div class="mt-4">
+                            <div class="text-sm text-gray-700 mb-2">AI Territory</div>
+                            <div class="bg-gray-200 rounded-full h-4 overflow-hidden">
+                                <div id="ai-territory" class="bg-red-500 h-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                            <div id="ai-percent" class="text-right text-sm text-gray-600 mt-1">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center - Game Canvas -->
+            <div class="lg:col-span-2">
+                <canvas id="gameCanvas" width="600" height="600"></canvas>
+            </div>
+
+            <!-- Right Panel - Controls & Settings -->
+            <div class="lg:col-span-1 space-y-4">
+                <!-- Controls -->
+                <div class="stat-card">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Controls</h2>
+                    <div class="space-y-2">
+                        <button id="end-turn-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                            End Turn
+                        </button>
+                        <button id="undo-btn" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition">
+                            Undo Move
+                        </button>
+                        <button id="restart-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition">
+                            Restart Game
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="stat-card">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Settings</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Map Size</label>
+                            <select id="map-size" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="10">Small (10x10)</option>
+                                <option value="15" selected>Medium (15x15)</option>
+                                <option value="20">Large (20x20)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AI Difficulty</label>
+                            <select id="ai-difficulty" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="easy">Easy</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AI Strategy</label>
+                            <select id="ai-strategy" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="defensive">Defensive</option>
+                                <option value="balanced" selected>Balanced</option>
+                                <option value="aggressive">Aggressive</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- How to Play -->
+                <div class="stat-card">
+                    <h2 class="text-xl font-bold mb-2 text-gray-800">How to Play</h2>
+                    <ul class="text-sm text-gray-700 space-y-1">
+                        <li>• Select a unit type</li>
+                        <li>• Click empty tiles to place</li>
+                        <li>• Place up to 3 units per turn</li>
+                        <li>• Units fight adjacent enemies</li>
+                        <li>• Control 60% to win!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Victory/Defeat Modal -->
+    <div id="game-over-modal" class="hidden fixed inset-0 modal bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-8 max-w-md mx-4 text-center transform transition-all">
+            <div id="victory-icon" class="text-6xl mb-4">🏆</div>
+            <h2 id="game-over-title" class="text-4xl font-bold mb-4">Victory!</h2>
+            <p id="game-over-message" class="text-xl text-gray-700 mb-6">You control the territory!</p>
+            <div class="space-y-3">
+                <button id="play-again-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition">
+                    Play Again
+                </button>
+                <button id="close-modal-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants
+        const UNIT_TYPES = {
+            WARRIOR: 'warrior',
+            ARCHER: 'archer',
+            MAGE: 'mage'
+        };
+
+        const UNIT_COLORS = {
+            warrior: { main: '#ef4444', light: '#fca5a5', dark: '#991b1b' },
+            archer: { main: '#22c55e', light: '#86efac', dark: '#15803d' },
+            mage: { main: '#3b82f6', light: '#93c5fd', dark: '#1e40af' }
+        };
+
+        const UNIT_ICONS = {
+            warrior: '⚔️',
+            archer: '🏹',
+            mage: '🔮'
+        };
+
+        // RPS Logic
+        const BEATS = {
+            warrior: 'archer',
+            archer: 'mage',
+            mage: 'warrior'
+        };
+
+        // Game State
+        class Game {
+            constructor() {
+                this.gridSize = 15;
+                this.tileSize = 0;
+                this.grid = [];
+                this.selectedUnit = null;
+                this.currentPlayer = 'player';
+                this.unitsPlacedThisTurn = 0;
+                this.maxUnitsPerTurn = 3;
+                this.moveHistory = [];
+                this.animations = [];
+                this.aiDifficulty = 'medium';
+                this.aiStrategy = 'balanced';
+
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+
+                this.initGrid();
+                this.setupEventListeners();
+                this.gameLoop();
+            }
+
+            initGrid() {
+                this.grid = [];
+                for (let y = 0; y < this.gridSize; y++) {
+                    this.grid[y] = [];
+                    for (let x = 0; x < this.gridSize; x++) {
+                        this.grid[y][x] = {
+                            owner: null,
+                            unit: null
+                        };
+                    }
+                }
+
+                // Place starting units for player (bottom left)
+                this.grid[this.gridSize - 1][0] = { owner: 'player', unit: 'warrior' };
+
+                // Place starting units for AI (top right)
+                this.grid[0][this.gridSize - 1] = { owner: 'ai', unit: 'warrior' };
+
+                this.calculateTileSize();
+                this.updateUI();
+            }
+
+            calculateTileSize() {
+                const canvasSize = Math.min(this.canvas.width, this.canvas.height);
+                this.tileSize = Math.floor(canvasSize / this.gridSize);
+            }
+
+            setupEventListeners() {
+                // Unit selection
+                document.querySelectorAll('.unit-icon').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const unitType = e.currentTarget.dataset.unit;
+                        this.selectUnit(unitType);
+                    });
+                });
+
+                // Canvas click
+                this.canvas.addEventListener('click', (e) => {
+                    this.handleCanvasClick(e);
+                });
+
+                // Canvas hover
+                this.canvas.addEventListener('mousemove', (e) => {
+                    this.handleCanvasHover(e);
+                });
+
+                // Controls
+                document.getElementById('end-turn-btn').addEventListener('click', () => {
+                    this.endTurn();
+                });
+
+                document.getElementById('undo-btn').addEventListener('click', () => {
+                    this.undoLastMove();
+                });
+
+                document.getElementById('restart-btn').addEventListener('click', () => {
+                    this.restart();
+                });
+
+                // Settings
+                document.getElementById('map-size').addEventListener('change', (e) => {
+                    this.gridSize = parseInt(e.target.value);
+                    this.restart();
+                });
+
+                document.getElementById('ai-difficulty').addEventListener('change', (e) => {
+                    this.aiDifficulty = e.target.value;
+                });
+
+                document.getElementById('ai-strategy').addEventListener('change', (e) => {
+                    this.aiStrategy = e.target.value;
+                });
+
+                // Modal buttons
+                document.getElementById('play-again-btn').addEventListener('click', () => {
+                    this.hideGameOverModal();
+                    this.restart();
+                });
+
+                document.getElementById('close-modal-btn').addEventListener('click', () => {
+                    this.hideGameOverModal();
+                });
+            }
+
+            selectUnit(unitType) {
+                if (this.currentPlayer !== 'player') return;
+
+                this.selectedUnit = unitType;
+
+                document.querySelectorAll('.unit-icon').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+
+                document.querySelector(`[data-unit="${unitType}"]`).classList.add('selected');
+            }
+
+            handleCanvasClick(e) {
+                if (this.currentPlayer !== 'player') return;
+                if (!this.selectedUnit) return;
+                if (this.unitsPlacedThisTurn >= this.maxUnitsPerTurn) return;
+
+                const rect = this.canvas.getBoundingClientRect();
+                const x = Math.floor((e.clientX - rect.left) / this.tileSize);
+                const y = Math.floor((e.clientY - rect.top) / this.tileSize);
+
+                if (this.isValidPlacement(x, y)) {
+                    this.placeUnit(x, y, this.selectedUnit, 'player');
+                }
+            }
+
+            handleCanvasHover(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const x = Math.floor((e.clientX - rect.left) / this.tileSize);
+                const y = Math.floor((e.clientY - rect.top) / this.tileSize);
+
+                this.hoveredTile = { x, y };
+            }
+
+            isValidPlacement(x, y) {
+                if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) return false;
+
+                const tile = this.grid[y][x];
+
+                // Can only place on empty tiles or own territory without units
+                return tile.owner === null || (tile.owner === 'player' && tile.unit === null);
+            }
+
+            placeUnit(x, y, unitType, owner) {
+                // Save state for undo
+                const previousState = JSON.parse(JSON.stringify(this.grid));
+                this.moveHistory.push({
+                    grid: previousState,
+                    unitsPlaced: this.unitsPlacedThisTurn
+                });
+
+                this.grid[y][x] = {
+                    owner: owner,
+                    unit: unitType
+                };
+
+                this.unitsPlacedThisTurn++;
+                this.updateUI();
+
+                // Process battles immediately
+                this.processBattles(x, y);
+
+                // Check win condition
+                this.checkWinCondition();
+            }
+
+            processBattles(x, y) {
+                const neighbors = this.getNeighbors(x, y);
+                const attackingTile = this.grid[y][x];
+
+                neighbors.forEach(({ nx, ny }) => {
+                    const defendingTile = this.grid[ny][nx];
+
+                    if (defendingTile.unit && defendingTile.owner !== attackingTile.owner) {
+                        const result = this.battle(attackingTile.unit, defendingTile.unit);
+
+                        if (result === 'attacker') {
+                            // Attacker wins - convert enemy tile
+                            this.addBattleAnimation(nx, ny, x, y, true);
+                            this.grid[ny][nx] = {
+                                owner: attackingTile.owner,
+                                unit: attackingTile.unit
+                            };
+
+                            // Chain reaction - process battles for newly converted tile
+                            setTimeout(() => {
+                                this.processBattles(nx, ny);
+                                this.checkWinCondition();
+                            }, 300);
+                        } else {
+                            // Defender wins
+                            this.addBattleAnimation(x, y, nx, ny, false);
+                        }
+                    }
+                });
+            }
+
+            battle(attacker, defender) {
+                if (BEATS[attacker] === defender) {
+                    return 'attacker';
+                } else {
+                    return 'defender';
+                }
+            }
+
+            getNeighbors(x, y) {
+                const neighbors = [];
+                const directions = [
+                    [-1, 0], [1, 0], [0, -1], [0, 1] // Left, Right, Up, Down
+                ];
+
+                directions.forEach(([dx, dy]) => {
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    if (nx >= 0 && nx < this.gridSize && ny >= 0 && ny < this.gridSize) {
+                        neighbors.push({ nx, ny });
+                    }
+                });
+
+                return neighbors;
+            }
+
+            addBattleAnimation(fromX, fromY, toX, toY, won) {
+                this.animations.push({
+                    type: 'battle',
+                    fromX,
+                    fromY,
+                    toX,
+                    toY,
+                    progress: 0,
+                    won,
+                    duration: 30 // frames
+                });
+            }
+
+            endTurn() {
+                if (this.currentPlayer !== 'player') return;
+                if (this.unitsPlacedThisTurn === 0) return;
+
+                this.currentPlayer = 'ai';
+                this.unitsPlacedThisTurn = 0;
+                this.moveHistory = [];
+                this.updateUI();
+
+                // AI takes turn after a short delay
+                setTimeout(() => {
+                    this.aiTurn();
+                }, 1000);
+            }
+
+            aiTurn() {
+                const moves = this.getAIMoves();
+                let moveIndex = 0;
+
+                const placeMoves = () => {
+                    if (moveIndex < moves.length && moveIndex < this.maxUnitsPerTurn) {
+                        const move = moves[moveIndex];
+                        this.placeUnit(move.x, move.y, move.unit, 'ai');
+                        moveIndex++;
+
+                        setTimeout(placeMoves, 800);
+                    } else {
+                        // AI turn complete
+                        setTimeout(() => {
+                            this.currentPlayer = 'player';
+                            this.unitsPlacedThisTurn = 0;
+                            this.updateUI();
+                        }, 500);
+                    }
+                };
+
+                placeMoves();
+            }
+
+            getAIMoves() {
+                const moves = [];
+                const strategy = this.aiStrategy;
+                const difficulty = this.aiDifficulty;
+
+                // Get AI-controlled tiles
+                const aiTiles = [];
+                const playerTiles = [];
+                const emptyTiles = [];
+
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        const tile = this.grid[y][x];
+                        if (tile.owner === 'ai') {
+                            aiTiles.push({ x, y, tile });
+                        } else if (tile.owner === 'player') {
+                            playerTiles.push({ x, y, tile });
+                        } else if (tile.owner === null) {
+                            emptyTiles.push({ x, y });
+                        }
+                    }
+                }
+
+                // Find valid placement locations
+                const validPlacements = [];
+
+                // Can place on AI territory without units
+                aiTiles.forEach(({ x, y, tile }) => {
+                    if (!tile.unit) {
+                        const neighbors = this.getNeighbors(x, y);
+                        const hasPlayerNeighbor = neighbors.some(({ nx, ny }) =>
+                            this.grid[ny][nx].owner === 'player'
+                        );
+
+                        validPlacements.push({
+                            x, y,
+                            priority: hasPlayerNeighbor ? 10 : 5,
+                            type: 'defend'
+                        });
+                    }
+                });
+
+                // Can place on empty tiles adjacent to AI territory
+                emptyTiles.forEach(({ x, y }) => {
+                    const neighbors = this.getNeighbors(x, y);
+                    const hasAINeighbor = neighbors.some(({ nx, ny }) =>
+                        this.grid[ny][nx].owner === 'ai'
+                    );
+                    const hasPlayerNeighbor = neighbors.some(({ nx, ny }) =>
+                        this.grid[ny][nx].owner === 'player'
+                    );
+
+                    if (hasAINeighbor) {
+                        let priority = 3;
+                        if (hasPlayerNeighbor) priority = 8;
+
+                        validPlacements.push({
+                            x, y,
+                            priority: priority,
+                            type: hasPlayerNeighbor ? 'attack' : 'expand'
+                        });
+                    }
+                });
+
+                // Strategy-based filtering
+                let filteredPlacements = validPlacements;
+
+                if (strategy === 'aggressive') {
+                    // Prefer attack and expand positions
+                    filteredPlacements = validPlacements.filter(p => p.type !== 'defend');
+                    if (filteredPlacements.length === 0) filteredPlacements = validPlacements;
+                } else if (strategy === 'defensive') {
+                    // Prefer defend positions
+                    filteredPlacements = validPlacements.filter(p => p.type === 'defend');
+                    if (filteredPlacements.length === 0) filteredPlacements = validPlacements;
+                }
+
+                // Sort by priority
+                filteredPlacements.sort((a, b) => b.priority - a.priority);
+
+                // Difficulty affects number of units placed
+                let numUnits = this.maxUnitsPerTurn;
+                if (difficulty === 'easy') {
+                    numUnits = Math.floor(Math.random() * 2) + 1; // 1-2 units
+                } else if (difficulty === 'medium') {
+                    numUnits = Math.floor(Math.random() * 2) + 2; // 2-3 units
+                }
+
+                // Select best placements
+                for (let i = 0; i < Math.min(numUnits, filteredPlacements.length); i++) {
+                    const placement = filteredPlacements[i];
+
+                    // Smart unit selection based on neighbors
+                    const unit = this.selectBestUnit(placement.x, placement.y);
+
+                    moves.push({
+                        x: placement.x,
+                        y: placement.y,
+                        unit: unit
+                    });
+                }
+
+                return moves;
+            }
+
+            selectBestUnit(x, y) {
+                const neighbors = this.getNeighbors(x, y);
+                const enemyUnits = [];
+
+                neighbors.forEach(({ nx, ny }) => {
+                    const tile = this.grid[ny][nx];
+                    if (tile.owner === 'player' && tile.unit) {
+                        enemyUnits.push(tile.unit);
+                    }
+                });
+
+                if (enemyUnits.length === 0) {
+                    // Random unit if no enemies nearby
+                    const units = [UNIT_TYPES.WARRIOR, UNIT_TYPES.ARCHER, UNIT_TYPES.MAGE];
+                    return units[Math.floor(Math.random() * units.length)];
+                }
+
+                // Count enemy unit types
+                const counts = {};
+                enemyUnits.forEach(unit => {
+                    counts[unit] = (counts[unit] || 0) + 1;
+                });
+
+                // Find most common enemy unit
+                let mostCommon = null;
+                let maxCount = 0;
+                for (const unit in counts) {
+                    if (counts[unit] > maxCount) {
+                        maxCount = counts[unit];
+                        mostCommon = unit;
+                    }
+                }
+
+                // Return counter unit
+                if (mostCommon === UNIT_TYPES.WARRIOR) return UNIT_TYPES.MAGE;
+                if (mostCommon === UNIT_TYPES.ARCHER) return UNIT_TYPES.WARRIOR;
+                if (mostCommon === UNIT_TYPES.MAGE) return UNIT_TYPES.ARCHER;
+
+                return UNIT_TYPES.WARRIOR;
+            }
+
+            undoLastMove() {
+                if (this.currentPlayer !== 'player') return;
+                if (this.moveHistory.length === 0) return;
+
+                const lastState = this.moveHistory.pop();
+                this.grid = lastState.grid;
+                this.unitsPlacedThisTurn = lastState.unitsPlaced;
+                this.updateUI();
+            }
+
+            restart() {
+                this.currentPlayer = 'player';
+                this.unitsPlacedThisTurn = 0;
+                this.moveHistory = [];
+                this.animations = [];
+                this.selectedUnit = null;
+
+                document.querySelectorAll('.unit-icon').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+
+                this.initGrid();
+            }
+
+            checkWinCondition() {
+                const territory = this.calculateTerritory();
+                const totalTiles = this.gridSize * this.gridSize;
+                const playerPercent = (territory.player / totalTiles) * 100;
+                const aiPercent = (territory.ai / totalTiles) * 100;
+
+                // Win condition: 60% territory or eliminate opponent
+                if (playerPercent >= 60 || territory.ai === 0) {
+                    this.showGameOver('player', playerPercent, aiPercent);
+                } else if (aiPercent >= 60 || territory.player === 0) {
+                    this.showGameOver('ai', playerPercent, aiPercent);
+                }
+            }
+
+            calculateTerritory() {
+                let player = 0;
+                let ai = 0;
+
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        const owner = this.grid[y][x].owner;
+                        if (owner === 'player') player++;
+                        else if (owner === 'ai') ai++;
+                    }
+                }
+
+                return { player, ai };
+            }
+
+            showGameOver(winner, playerPercent, aiPercent) {
+                const modal = document.getElementById('game-over-modal');
+                const title = document.getElementById('game-over-title');
+                const message = document.getElementById('game-over-message');
+                const icon = document.getElementById('victory-icon');
+
+                if (winner === 'player') {
+                    title.textContent = 'Victory!';
+                    message.textContent = `You control ${playerPercent.toFixed(1)}% of the territory!`;
+                    icon.textContent = '🏆';
+                } else {
+                    title.textContent = 'Defeat!';
+                    message.textContent = `AI controls ${aiPercent.toFixed(1)}% of the territory.`;
+                    icon.textContent = '😔';
+                }
+
+                modal.classList.remove('hidden');
+            }
+
+            hideGameOverModal() {
+                document.getElementById('game-over-modal').classList.add('hidden');
+            }
+
+            updateUI() {
+                // Update turn display
+                const turnDisplay = document.getElementById('turn-display');
+                turnDisplay.textContent = this.currentPlayer === 'player' ? 'Player' : 'AI';
+                turnDisplay.className = this.currentPlayer === 'player' ? 'font-bold text-lg text-blue-600' : 'font-bold text-lg text-red-600';
+
+                // Update units left
+                document.getElementById('units-left').textContent = this.maxUnitsPerTurn - this.unitsPlacedThisTurn;
+
+                // Update territory percentages
+                const territory = this.calculateTerritory();
+                const totalTiles = this.gridSize * this.gridSize;
+                const playerPercent = (territory.player / totalTiles) * 100;
+                const aiPercent = (territory.ai / totalTiles) * 100;
+
+                document.getElementById('player-territory').style.width = playerPercent + '%';
+                document.getElementById('player-percent').textContent = playerPercent.toFixed(1) + '%';
+
+                document.getElementById('ai-territory').style.width = aiPercent + '%';
+                document.getElementById('ai-percent').textContent = aiPercent.toFixed(1) + '%';
+
+                // Update button states
+                document.getElementById('undo-btn').disabled = this.moveHistory.length === 0 || this.currentPlayer !== 'player';
+                document.getElementById('end-turn-btn').disabled = this.currentPlayer !== 'player' || this.unitsPlacedThisTurn === 0;
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Draw grid
+                for (let y = 0; y < this.gridSize; y++) {
+                    for (let x = 0; x < this.gridSize; x++) {
+                        this.drawTile(x, y);
+                    }
+                }
+
+                // Draw animations
+                this.updateAnimations();
+            }
+
+            drawTile(x, y) {
+                const tile = this.grid[y][x];
+                const px = x * this.tileSize;
+                const py = y * this.tileSize;
+
+                // Background
+                if (tile.owner === 'player') {
+                    this.ctx.fillStyle = '#93c5fd';
+                } else if (tile.owner === 'ai') {
+                    this.ctx.fillStyle = '#fca5a5';
+                } else {
+                    this.ctx.fillStyle = '#f3f4f6';
+                }
+                this.ctx.fillRect(px, py, this.tileSize, this.tileSize);
+
+                // Hover effect
+                if (this.hoveredTile && this.hoveredTile.x === x && this.hoveredTile.y === y) {
+                    if (this.isValidPlacement(x, y) && this.selectedUnit && this.currentPlayer === 'player') {
+                        this.ctx.fillStyle = 'rgba(251, 191, 36, 0.3)';
+                        this.ctx.fillRect(px, py, this.tileSize, this.tileSize);
+                    }
+                }
+
+                // Grid lines
+                this.ctx.strokeStyle = '#d1d5db';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(px, py, this.tileSize, this.tileSize);
+
+                // Unit
+                if (tile.unit) {
+                    const color = UNIT_COLORS[tile.unit];
+
+                    // Unit circle background
+                    this.ctx.fillStyle = tile.owner === 'player' ? color.dark : color.main;
+                    this.ctx.beginPath();
+                    this.ctx.arc(
+                        px + this.tileSize / 2,
+                        py + this.tileSize / 2,
+                        this.tileSize * 0.35,
+                        0,
+                        Math.PI * 2
+                    );
+                    this.ctx.fill();
+
+                    // Unit icon
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.font = `${this.tileSize * 0.4}px Arial`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText(
+                        UNIT_ICONS[tile.unit],
+                        px + this.tileSize / 2,
+                        py + this.tileSize / 2
+                    );
+                }
+            }
+
+            updateAnimations() {
+                this.animations = this.animations.filter(anim => {
+                    if (anim.type === 'battle') {
+                        anim.progress++;
+
+                        const fromPx = anim.fromX * this.tileSize + this.tileSize / 2;
+                        const fromPy = anim.fromY * this.tileSize + this.tileSize / 2;
+                        const toPx = anim.toX * this.tileSize + this.tileSize / 2;
+                        const toPy = anim.toY * this.tileSize + this.tileSize / 2;
+
+                        const progress = anim.progress / anim.duration;
+                        const easedProgress = this.easeInOutQuad(progress);
+
+                        const currentX = fromPx + (toPx - fromPx) * easedProgress;
+                        const currentY = fromPy + (toPy - fromPy) * easedProgress;
+
+                        // Draw battle effect
+                        this.ctx.fillStyle = anim.won ? '#fbbf24' : '#ef4444';
+                        this.ctx.globalAlpha = 1 - progress;
+                        this.ctx.beginPath();
+                        this.ctx.arc(currentX, currentY, this.tileSize * 0.2, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.globalAlpha = 1;
+
+                        return anim.progress < anim.duration;
+                    }
+                    return true;
+                });
+            }
+
+            easeInOutQuad(t) {
+                return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            }
+
+            gameLoop() {
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Initialize game when page loads
+        let game;
+        window.addEventListener('load', () => {
+            game = new Game();
+        });
+    </script>
+</body>
+</html>
